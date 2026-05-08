@@ -8,15 +8,15 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Beam {
+    // Basic Geometry
     public String sectionType;
-
     public Double length;
 
-    // RECT
+    // RECT Section
     public Double width;
     public Double height;
 
-    // CIRCULAR
+    // CIRCULAR Section
     public Double radius;
 
     // I-section
@@ -27,7 +27,14 @@ public class Beam {
     // T-section
     public Double stemThickness;
 
-    // Actuator
+    // --- PHYSICS & FEA PARAMETERS ---
+    public Double load;          // Force applied in Newtons (P)
+    public Double loadPosition;  // Distance from fixed end to apply load (Lp)
+    public Double materialE;     // Young's Modulus in MPa (e.g., Steel = 210000)
+
+    // Piezoelectric Sensor / Actuator Position
     public Double ax, ay, az;
+
+    // Piezoelectric Sensor / Actuator Orientation (Pitch, Yaw, Roll)
     public Double px, py, pz;
 }

@@ -1,70 +1,54 @@
 package com.example.ug_project.service;
 
-import com.example.ug_project.model.Beam;
+import com.example.ug_project.model.BeamRequest;
 import org.springframework.stereotype.Service;
 import java.io.*;
-import java.util.*;
 
 @Service
 public class BeamService {
+    private static final String FREECAD_PATH = "/Applications/FreeCAD.app/Contents/Resources/bin/freecadcmd";
+    private static final String SCRIPT_PATH = "/Users/akshat/IdeaProjects/UG_Project/scripts/beam_engine.py";
 
-    private static final String PROJECT_ROOT = "/Users/akshat/IdeaProjects/UG_Project";
-    private static final String FREECAD_EXEC = "/Applications/FreeCAD.app/Contents/Resources/bin/freecadcmd";
-    private static final String FREECAD_LIB = "/Applications/FreeCAD.app/Contents/Resources/lib";
+    public File generateStepFile(BeamRequest request) throws Exception {
+        String fullPath = request.getOutput().getDirectory() + request.getOutput().getFileName();
 
-    public File generateBeam(Beam r) throws Exception {
-        String outputDir = PROJECT_ROOT + "/generated_models";
-        new File(outputDir).mkdirs();
+        // Ensure directory exists to prevent Python 'FileNotFound' errors
+        new File(request.getOutput().getDirectory()).mkdirs();
 
-        String fileName = "beam_" + System.currentTimeMillis() + ".step";
-        String outputPath = outputDir + "/" + fileName;
+        // 7 Parameters: TYPE|L|D|W|H|TF|TW|PATH
+        String beamData = String.format("%s|%.2f|%.2f|%.2f|%.2f|%.2f|%.2f|%s",
+                request.getBeamConfiguration().getType(),
+                request.getBeamConfiguration().getDimensions().getLength(),
+                request.getBeamConfiguration().getDimensions().getDiameter(),
+                request.getBeamConfiguration().getDimensions().getWidth(),
+                request.getBeamConfiguration().getDimensions().getHeight(),
+                request.getBeamConfiguration().getDimensions().getFlangeThickness(),
+                request.getBeamConfiguration().getDimensions().getWebThickness(),
+                fullPath
+        );
 
-        // 1. Pack the data
-        StringJoiner sj = new StringJoiner("|");
-        sj.add(r.getSectionType()).add(String.valueOf(r.getLength()));
+        String pythonCmd = String.format("exec(open('%s').read())", SCRIPT_PATH);
+        ProcessBuilder pb = new ProcessBuilder(FREECAD_PATH, "-c", pythonCmd);
+        pb.environment().put("BEAM_DATA", beamData);
 
-        if ("RECT".equals(r.getSectionType())) {
-            sj.add(String.valueOf(r.getWidth())).add(String.valueOf(r.getHeight()));
-        } else if ("I".equals(r.getSectionType()) || "T".equals(r.getSectionType())) {
-            sj.add(String.valueOf(r.getFlangeWidth())).add(String.valueOf(r.getFlangeThickness()))
-                    .add(String.valueOf(r.getWebThickness() != null ? r.getWebThickness() : r.getStemThickness()))
-                    .add(String.valueOf(r.getHeight()));
-        } else if ("CIRCULAR".equals(r.getSectionType())) {
-            sj.add(String.valueOf(r.getRadius()));
-        }
-
-        sj.add(String.valueOf(r.getAx())).add(String.valueOf(r.getAy())).add(String.valueOf(r.getAz()));
-        sj.add(String.valueOf(r.getPx())).add(String.valueOf(r.getPy())).add(String.valueOf(r.getPz()));
-        sj.add(outputPath);
-
-        // 2. Build the command string for FreeCAD's internal Python engine
-        String pythonExecCmd = String.format("exec(open('%s/scripts/generate_beam_with_actuator.py').read())", PROJECT_ROOT);
-
-        ProcessBuilder pb = new ProcessBuilder(FREECAD_EXEC, "-c", pythonExecCmd);
-
-        // 3. Set the Environment (Crucial for Mac)
-        Map<String, String> env = pb.environment();
-        env.put("BEAM_DATA", sj.toString());
-        env.put("PYTHONPATH", FREECAD_LIB);
-
+        // Redirect errors so they show up in IntelliJ's console
         pb.redirectErrorStream(true);
-        Process p = pb.start();
 
-        // Optional: Stream logs to IntelliJ console so you see the "Write Done" message
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+        Process process = pb.start();
+
+        // Log Python output to IntelliJ console for debugging
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
-            while ((line = reader.readLine()) != null) {
-                System.out.println("FreeCAD Output: " + line);
-            }
+            while ((line = r.readLine()) != null) { System.out.println("FreeCAD: " + line); }
         }
 
-        p.waitFor();
+        process.waitFor();
 
-        File result = new File(outputPath);
-        if (!result.exists()) {
-            throw new RuntimeException("CAD file was not generated. Check console for Python errors.");
+        File resultFile = new File(fullPath);
+        if (resultFile.exists()) {
+            return resultFile;
+        } else {
+            throw new RuntimeException("CAD Generation Failed - Python script did not create file.");
         }
-
-        return result;
     }
 }
